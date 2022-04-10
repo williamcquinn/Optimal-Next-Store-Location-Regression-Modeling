@@ -1,0 +1,376 @@
+---
+pagetitle: Rmd report
+output:
+  html_document:
+    highlight: zenburn
+    theme: cosmo
+    df_print: paged
+    toc: yes
+    code_folding: hide
+    code_download: true
+---
+
+```{r r_setup, include = FALSE}
+## initial settings
+knitr::opts_chunk$set(
+  comment = NA,
+  echo = TRUE,
+  error = TRUE,
+  cache = FALSE,
+  message = FALSE,
+
+  dpi = 96,
+  warning = FALSE
+)
+
+## width to use when printing tables etc.
+options(
+  width = 250,
+  scipen = 100,
+  max.print = 5000,
+  stringsAsFactors = FALSE
+)
+
+## make all required libraries available by loading radiant package if needed
+if (is.null(shiny::getDefaultReactiveDomain())) library(radiant)
+
+## include code to load the data you require
+## for interactive use attach the r_data environment
+# attach(r_data)
+```
+
+<style>
+.btn, .form-control, pre, code, pre code {
+  border-radius: 4px;
+}
+.table {
+  width: auto;
+}
+ul, ol {
+  padding-left: 18px;
+}
+code, pre, pre code {
+  overflow: auto;
+  white-space: pre;
+  word-wrap: normal;
+}
+code {
+  color: #c7254e;
+  background-color: #f9f2f4;
+}
+pre {
+  background-color: #ffffff;
+}
+</style>
+
+## Croq Pain Restaurants
+### Day Group 4
+
+#### Executive Summary
+
+RE: Croq'Pain Store Selection Recommendation
+July 1995
+
+Dear Michael Boutillon,
+
+After conducting a thorough analysis of the 60 current Croq'Pain stores, we have refined your regression model in a manner that we believe will better serve you to predict the earnings of new potential store locations. 
+
+Our goal was two-fold:
+
+1) Create a model that would use the optimal variables to make accurate predictions about the earnings of the existing store locations
+
+2) Make highly accurate predictions about the earnings of future store locations.
+
+**To guide our analysis, we made the following assumptions:**
+
+Earnings normalized with respect to the total population of the locality is the key factor. 
+
+A target performance ratio of 26% will be the threshold for our location recommendations.
+
+The data obtained for the first 60 stores is representative of future locations.
+
+**Recommendations**
+
+In your case, there are many variables that could influence the earnings of your 60 stores. In order for our team to make an accurate prediction about the earnings of future locations, each of the variables provided in your model must be considered. A linear regression model is the most decisive tool to refine these variables and confidently establish which are the most significant in predicting earnings.
+
+The regression analysis performed on the basis of the available data indicated that the size of the store, average income in locality, monthly rent per square meter in the same locale, number of 35-44 years old in the 3 km radius around the site, number of competitors in the 1 km radius, and the number of non-restaurant businesses in 1 km radius were dominant in predicting the projected earnings for the prospective location. 
+
+This model led us to make the recommendation to you that stores 64 and 69 are suitable additions to consider, as they are expected to perform beyond the targeted performance ratio of 26%.
+
+**Strengths of the Model**
+
+The model we adopted after a few iterations (See `Part A` below) accounts for factors that are correlated (such as Total and P15 - P55). As a result, we have removed such distracting variables. The $R^2$  value, 70%, serves to provide insights to the predicting power of our model. This means that 70% of the response variable variation can be explained by our linear model. P-values, which are measures of deciding whether the variables are statistically significant, are mostly less than 0.05, indicating that we are confident 95% of the time we will obtain test results at least as extreme as the results actually observed. These values suggest the regression model is relatively accurate in predicting unknown factors that are related to our data.
+
+**Potential Drawbacks of the Model**
+
+Potential weaknesses of using a linear regression that we discovered in our analysis were that given only 60 stores, the data may not be representative of the true significance of the predictors and may lead to biases. The factors that were not found to be significant in our regression model may prove to be significant once the number of restaurants increases. In addition, there may exist variables in the data that might not have been accounted for, but have a significant effect on earnings. However, our recommendation that you follow through with the adoption of our model still stands and we see it as the most viable option in predicting future earnings.
+
+Please find below our detailed analysis and linear model iterations. 
+
+Kind regards,   
+Day Group 4
+
+
+#### Before We Start
+
+Using the provided data, our goal is to find a model which will best help us predict the performance ratio and give Jean Gerard a list of stores which will likely succeed using our model. 
+
+Taking the look at the data, the first store has a seemingly anomalous data point. We will start out by changing the outlier to $28.339$, citing user entry error. This base dataset we will be looking at will have the data for 60 stores.  
+```{r}
+## recode variable
+CroqPainFix <- mutate(CroqPain, EARN = car::Recode(EARN, "10000: hi = 28.339"))
+## register the new dataset
+register("CroqPainFix", "CroqPain")
+## remove missing values
+CroqPainFix <- CroqPainFix %>% filter(complete.cases(EARN))
+```
+
+Since the goal of the exercise is to make predictions of **EARN** for stores that have not yet been opened and that do not have **EARN** data, we will create a separate data set with the last 10 entries, which are missing **EARN** data. 
+
+```{r}
+## create holdout sample
+CroqPain_holdout <- filter(CroqPain, !(STOR <= 60)) %>% select(STOR, EARN, K, SIZE, EMPL, total, P15, P25, P35, P45, P55, INC, COMP, NCOMP, NREST, PRICE, CLI, CITY)
+## register the new dataset
+register("CroqPain_holdout", "CroqPain")
+```
+
+#### Part A
+**Visualize the data**
+
+**Histograms for the dataset.**
+```{r fig.width = 7, fig.height = 31.5, dpi = 96}
+visualize(
+  CroqPainFix, 
+  xvar = c(
+    "EARN", "K", "SIZE", "EMPL", "total", "P15", "P25", 
+    "P35", "P45", "P55", "INC", "COMP", "NCOMP", "NREST", "PRICE", 
+    "CLI"
+  ), 
+  type = "dist", 
+  bins = 22, 
+  custom = FALSE
+)
+```
+
+The histograms above just give us a general idea of the distribution of the data points, but some plots are of interest. 
+
+1) `EARNINGS`: The distribution is fairly normal, indicating the usability of this without transformation, but we will continue to look at the scatter plots as well.
+
+2) `SIZE` & `CLI` are skewed oppositely, indicating that while most of the stores are smaller is area, the `CLI` is fairly high across the data set. 
+
+3) `SIZE` & `PRICE` are skewed similarly, for the area of the stores and the rents for store spaces. 
+
+4) Population data does not follow a normal distribution, indicating we may have to make some changes before it's fully usable. 
+
+Overall, the distributions do not follow a normal trend because of the low number of data points we actually have available. 
+
+**Scatterplots for P15 through P55 & competitions.**
+```{r fig.width = 7, fig.height = 10.5, dpi = 96}
+visualize(
+  CroqPainFix, 
+  xvar = c("total", "P15", "P25", "P35", "P45", "P55", "COMP", "NCOMP"), 
+  yvar = "EARN", 
+  type = "scatter", 
+  nrobs = -1, 
+  check = c("line", "loess"), 
+  custom = FALSE
+)
+```
+
+The scatterplots above show the populations against earnings, as well as the existence of stores that are competition on earnings. When looking at the population & total against earnings, we can observe a similar trend, which is understandable since the populations are a subset of the total population in a 3 km radius around the site. 
+
+Thus, these correlations make sense. 
+
+1) The correlations for `total` and `P15` through `P55` are directly correlated since the population of each age group has to be correlated with the total population in the 3 km radius around the site. 
+
+2) `P25` and `P55` look a little different from the rest (`15`, `35`, and `45`) of the scatterplots. 
+
+We will take a quantitative look at the correlations below. 
+
+To account for the linearity we observed above, we will normalize the variables above by the total. 
+```{r}
+## normalize variables
+CroqPainFix <- mutate_ext(CroqPainFix, .vars = vars(EARN, P15, P25, P35, P45, P55, COMP, NCOMP, NREST), .funs = ~ normalize(., total), .ext = "_norm")
+```
+
+**NON-TRANSFORMED data.**
+```{r}
+result <- regress(
+  CroqPainFix, 
+  rvar = "EARN", 
+  evar = c(
+    "total", "P15", "P25", "P35","P45", "P55", "COMP", "NCOMP", 
+    "NREST"
+  ), 
+  check = "standardize"
+)
+summary(result, sum_check = c("rmse", "vif"))
+plot(result, plots = "correlations", nrobs = -1, custom = FALSE)
+plot(result, plots = "dashboard", lines = c("line", "loess"), nrobs = -1, custom = FALSE)
+```
+
+**NORMALIZED DATA** 
+```{r}
+result <- regress(
+  CroqPainFix, 
+  rvar = "EARN_norm", 
+  evar = c(
+    "total", "P15_norm", "P25_norm", "P35_norm", "P45_norm", 
+    "P55_norm", "COMP_norm", "NCOMP_norm", "NREST_norm"
+  ), 
+  check = "standardize"
+)
+summary(result, sum_check = c("rmse", "vif"))
+plot(result, plots = "correlations", nrobs = -1, custom = FALSE)
+plot(result, plots = "dashboard", lines = c("line", "loess"), nrobs = -1, custom = FALSE)
+```
+
+The regressions above are at first glance, and take into account all the variables. Of course, this is not an adequate model, and we will have to refine the model to better fit our data set. 
+
+But after initial observations, the preferred regression would be with the normalized data because:  
+
+1) Only 33% of the normalized variables have multicollenearity & high VIF, as opposed to 66% of the non-transformed data. 
+
+2) Higher VIF values make the variables effect on the model less trustworthy.
+
+3) Looking at the collinearity graph, there is less quantititave and qualitative linearity amongst the normalized variables. 
+
+When looking at the model with the normalized data, there are only 2 suspicious variables, with VIF values slightly greater than 10 (`P45_norm` and `P35_norm`). We can attempt to fix this in our model and interpretation.
+
+No evidence of heteroscedasticity for the non-transformed & normalized data looking at the Residuals vs. Fitted plot from the dashboard.
+
+#### Regression Model: Part A
+```{r}
+result <- regress(
+  CroqPainFix, 
+  rvar = "EARN_norm", 
+  evar = c("SIZE", "INC", "PRICE", "P35_norm", "COMP_norm", "NREST_norm"), 
+  check = "standardize",
+  data_filter = "STOR <= 60"
+)
+summary(result, sum_check = c("rmse", "vif"))
+pred <- predict(result, pred_data = CroqPainFix)
+#print(tail(pred, n = 10))
+CroqPainFix <- store(CroqPainFix, pred, name = "pred_reg")
+```
+
+Since the majority of the population surveyed (55%) were between the ages of 25 and 35, the population variable being used is `P35_norm`. Since the goal is to also open more restaurants in business parks and in downtown, this is the target audience for whom we are attempting to build this model. 
+
+The variables we will be using to build our model are as follows: `SIZE`, `INC`, `PRICE`, `P35_norm`, `COMP_norm`, `NREST_norm`. The $R^2$ value is $0.696$ for our model, and we have confirmed no collinearity between the variables. 
+
+We will now use the **Step-wise** function to confirm the validity of our model.
+
+**Step-wise for NON-TRANSFORMED data.**
+```{r fig.width = 7, fig.height = 8.08, dpi = 96}
+result <- regress(
+  CroqPainFix, 
+  rvar = "EARN", 
+  evar = c(
+    "total", "P15", "P25", "P35", "P45", "P55", "COMP", "NCOMP", 
+    "NREST"
+  ), 
+  check = c("standardize", "stepwise-backward"), 
+  data_filter = "STOR <= 60"
+)
+summary(result, sum_check = c("rmse", "vif"))
+plot(result, plots = "dashboard", lines = c("line", "loess"), nrobs = -1, custom = FALSE)
+```
+
+**Step-wise for NORMALIZED DATA data.**
+```{r fig.width = 7, fig.height = 8.08, dpi = 96}
+result <- regress(
+  CroqPainFix, 
+  rvar = "EARN_norm", 
+  evar = c(
+    "SIZE", "INC", "PRICE", "P15_norm", "P25_norm", "P35_norm", 
+    "P45_norm", "P55_norm", "COMP_norm", "NCOMP_norm", "NREST_norm"
+  ), 
+  check = c("standardize", "stepwise-backward"), 
+  data_filter = "STOR <= 60"
+)
+summary(result, sum_check = c("rmse", "vif"))
+plot(result, plots = "dashboard", lines = c("line", "loess"), nrobs = -1, custom = FALSE)
+```
+
+The step-wise functions above are purely statistical, thus do not take into consideration the VIF values, or the corresponding variables. When we make that determination based on the values, the non-transformed model still has VIF values that are too high. But the normalized model results in VIF values that are much lower, with a $R^2$ value of $0.725$. 
+
+While the $R^2$ value above is higher than the intial $0.696$ from our model, the observed difference is in the inclusion of the poplation variable. Although this generated model uses `P15_norm` and `P25_norm`, using `P35_norm` would be a better fit for the reccomendation we are making.  
+
+#### Re-modeled regression: Part B
+
+Using the data from stores that opened prior to 1994, we can rebuild the model. And this can be used to predict the normalized earnings for the last 10 stores. 
+
+Using the same variables to build our model, we can observe the predicted values. We can also see the fit of this model with the data, when looking at the `Residuals vs Normal density` plot. 
+
+```{r fig.width = 7, fig.height = 8.08, dpi = 96}
+result <- regress(
+  CroqPainFix, 
+  rvar = "EARN_norm", 
+  evar = c("SIZE", "INC", "PRICE", "P35_norm", "COMP_norm", "NREST_norm"), 
+  check = "standardize", 
+  data_filter = "STOR <= 50"
+)
+summary(result, sum_check = c("rmse", "vif"))
+plot(result, plots = "dashboard", lines = c("line", "loess"), nrobs = -1, custom = FALSE)
+pred <- predict(result, pred_data = CroqPainL)
+print(pred, n = 10)
+CroqPainL <- store(CroqPainL, pred, name = "pred_reg")
+```
+
+`COMP_norm` is not statistically significant in this model, because p-value is still greater than $0.05$, but we want to avoid ommitted variable bias, so included in the model to control for the model. In addition, when we are only looking at the data from 50 stores, competition will affect bottom-line earnings, and this a variable our model will take into account. 
+
+While these predicted values do not perfectly match the data provided for the last 10 stores, the tolerance level is within a comfortable range for us to accept this model. 
+
+To guage which stores should have been opened in 1994, we will base the decision on a threshold of 26% performance ratio.
+
+To calulate performance ratio from our model, we will be doing 
+
+$\frac{Earnings * total}{K}$.
+
+```{r}
+## transform variable
+CroqPainFix <- mutate_ext(CroqPainFix, .vars = vars(EARN), .funs = log, .ext = "_ln")
+## create new variable(s)
+CroqPainL <- mutate(CroqPainL, PR = (EARN_norm * total) / K)
+```
+
+We only want to open stores which have a performance ratio greater than 26%. We observe this to be true in 3 stores: `51`, `57` & `60`. Thus, these are the only 3 stores which should have been opened in 1994.
+
+#### Strategic Planning: Part C
+
+Using the model we built above, we will take a look at the 10 new stores to make a reccomendation on which ones should be opened. 
+
+```{r}
+## normalize variables
+CroqPain_holdout <- mutate_ext(CroqPain_holdout, .vars = vars(EARN, P35, COMP, NREST), .funs = ~ normalize(., total), .ext = "_norm")
+## reorder/remove variables
+CroqPain_holdout <- select(CroqPain_holdout, STOR, EARN, K, SIZE, EMPL, total, P15, P25, P35, P45, P55, INC, COMP, NCOMP, NREST, PRICE, CLI, CITY, P35_norm, COMP_norm, NREST_norm)
+```
+
+```{r}
+result <- regress(
+  CroqPainFix, 
+  rvar = "EARN_norm", 
+  evar = c("SIZE", "INC", "PRICE", "P35_norm", "COMP_norm", "NREST_norm"), 
+  check = "standardize"
+)
+summary(result, sum_check = c("rmse", "vif"))
+pred <- predict(result, pred_data = CroqPain_holdout)
+print(pred, n = 10)
+CroqPain_holdout <- store(CroqPain_holdout, pred, name = "pred_reg")
+CroqPain_holdout <- mutate(CroqPain_holdout, PR = (pred_reg * total) / K)
+```
+```{r}
+## filter and sort the dataset
+CroqPain_holdout %>%
+  select(STOR, P35_norm, COMP_norm, NREST_norm, pred_reg, PR) %>%
+  dtab(dec = 2, nr = 100) %>% render()
+```
+Stores with performance ratio greater than 26% are `64` & `69`, and thus, should be opened.
+
+
+
+
+
+
+
